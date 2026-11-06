@@ -3,24 +3,37 @@ import React, { useState, useEffect, useRef } from 'react';
 export default function MobileCalculator () {
   const [tokens, setTokens] = useState([]);
   const [currentInput, setCurrentInput] = useState('');
+  const [cursorPos, setCursorPos] = useState(0); // Position index in raw string expression
   const displayEndRef = useRef(null);
 
-  // Auto-scroll to the bottom whenever expression updates
+  // Combine tokens into a raw string expression to manage cursor position seamlessly
+  const getRawExpression = () => {
+    return [...tokens, currentInput].join('');
+  };
+
+  const rawExpr = getRawExpression();
+
+  // Auto-scroll as the expression changes
   useEffect(() => {
     displayEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [tokens, currentInput]);
+  }, [rawExpr, cursorPos]);
 
-  // Order of operations calculation
-  const calculateTotal = (allTokens) => {
-    if (allTokens.length === 0) return 0;
+  // Evaluate standard PEMDAS calculation from raw string
+  const calculateTotal = (expr) => {
+    if (!expr) return 0;
 
+    // Parse tokens (numbers vs operators)
+    const matches = expr.match(/(\d+\.?\d*|[\+\-\*\/])/g);
+    if (!matches) return 0;
+
+    // Step 1: Multiplication & Division
     const intermediate = [];
     let i = 0;
-    while (i < allTokens.length) {
-      const token = allTokens[i];
+    while (i < matches.length) {
+      const token = matches[i];
       if (token === '*' || token === '/') {
         const prevNum = parseFloat(intermediate.pop());
-        const nextNum = parseFloat(allTokens[i + 1]);
+        const nextNum = parseFloat(matches[i + 1]);
 
         if (isNaN(nextNum)) {
           intermediate.push(prevNum);
@@ -35,6 +48,7 @@ export default function MobileCalculator () {
       i++;
     }
 
+    // Step 2: Addition & Subtraction
     let result = parseFloat(intermediate[0]) || 0;
     for (let j = 1; j < intermediate.length; j += 2) {
       const op = intermediate[j];
@@ -47,69 +61,102 @@ export default function MobileCalculator () {
     return Math.round(result * 1e8) / 1e8;
   };
 
-  const getFullTokens = () => {
-    return currentInput !== '' ? [...tokens, currentInput] : tokens;
+  const currentTotal = calculateTotal(rawExpr);
+
+  // Insert value at the active cursor position
+  const insertAtCursor = (char) => {
+    const newExpr = rawExpr.slice(0, cursorPos) + char + rawExpr.slice(cursorPos);
+    parseRawToTokens(newExpr);
+    setCursorPos((prev) => prev + char.length);
   };
 
-  const fullTokens = getFullTokens();
-  const currentTotal = fullTokens.length > 0 ? calculateTotal(fullTokens) : 0;
+  // Convert raw string back into state tokens
+  const parseRawToTokens = (str) => {
+    const parts = str.match(/(\d+\.?\d*|[\+\-\*\/])/g) || [];
+    if (parts.length === 0) {
+      setTokens([]);
+      setCurrentInput('');
+      return;
+    }
+
+    const last = parts[parts.length - 1];
+    if (['+', '-', '*', '/'].includes(last)) {
+      setTokens(parts);
+      setCurrentInput('');
+    } else {
+      setTokens(parts.slice(0, -1));
+      setCurrentInput(last);
+    }
+  };
 
   const handleNumber = (val) => {
-    if (val === '.' && currentInput.includes('.')) return;
-    setCurrentInput((prev) => prev + val);
+    insertAtCursor(val);
   };
 
   const handleOperator = (op) => {
-    if (!currentInput && tokens.length === 0) return;
-
-    if (currentInput !== '') {
-      setTokens([...tokens, currentInput, op]);
-      setCurrentInput('');
+    if (!rawExpr && op !== '-') return;
+    const lastChar = rawExpr[cursorPos - 1];
+    if (['+', '-', '*', '/'].includes(lastChar)) {
+      // Replace existing operator behind cursor
+      const newExpr = rawExpr.slice(0, cursorPos - 1) + op + rawExpr.slice(cursorPos);
+      parseRawToTokens(newExpr);
     } else {
-      setTokens([...tokens.slice(0, -1), op]);
+      insertAtCursor(op);
     }
   };
 
   const handleBackspace = () => {
-    if (currentInput.length > 0) {
-      setCurrentInput((prev) => prev.slice(0, -1));
-    } else if (tokens.length > 0) {
-      const newTokens = tokens.slice(0, -1);
-      const lastToken = newTokens[newTokens.length - 1];
-
-      if (lastToken && !['+', '-', '*', '/'].includes(lastToken)) {
-        setCurrentInput(lastToken);
-        setTokens(newTokens.slice(0, -1));
-      } else {
-        setTokens(newTokens);
-      }
-    }
+    if (cursorPos === 0 || !rawExpr) return;
+    const newExpr = rawExpr.slice(0, cursorPos - 1) + rawExpr.slice(cursorPos);
+    parseRawToTokens(newExpr);
+    setCursorPos((prev) => Math.max(0, prev - 1));
   };
 
   const handleEquals = () => {
-    if (fullTokens.length === 0) return;
-    const finalResult = calculateTotal(fullTokens);
+    if (!rawExpr) return;
+    const finalResult = calculateTotal(rawExpr).toString();
     setTokens([]);
-    setCurrentInput(finalResult.toString());
+    setCurrentInput(finalResult);
+    setCursorPos(finalResult.length);
   };
 
   const handleClear = () => {
     setTokens([]);
     setCurrentInput('');
+    setCursorPos(0);
   };
 
-  // Render tokens into vertical rows (2 visible at a time)
+  // Render tokens into vertical rows with interactive cursor placement
   const renderTokenDisplay = () => {
+    const matches = rawExpr.match(/(\d+\.?\d*|[\+\-\*\/])/g) || [];
     const elements = [];
-    let i = 0;
+    let charCounter = 0;
 
-    while (i < fullTokens.length) {
-      const token = fullTokens[i];
+    let i = 0;
+    while (i < matches.length) {
+      const token = matches[i];
+      const tokenStartIdx = charCounter;
+      charCounter += token.length;
+      const tokenEndIdx = charCounter;
+
       const isOp = ['+', '-', '*', '/'].includes(token);
 
+      // Render blinking/active cursor bar
+      const renderCursorIfNeeded = (pos) => {
+        if (cursorPos === pos) {
+          return <span key={`cursor-${pos}`} style={styles.cursor}>|</span>;
+        }
+        return null;
+      };
+
       if (isOp) {
+        elements.push(renderCursorIfNeeded(tokenStartIdx));
         elements.push(
-          <span key={`op-${i}`} style={styles.operatorToken}>
+          <span
+            key={`op-${i}`}
+            style={styles.operatorToken}
+            onClick={() => setCursorPos(tokenEndIdx)}
+          >
             {token === '*' ? '×' : token === '/' ? '÷' : token}
           </span>
         );
@@ -117,14 +164,15 @@ export default function MobileCalculator () {
         continue;
       }
 
-      const prevOp = fullTokens[i - 1];
-      const nextOp = fullTokens[i + 1];
+      const nextOp = matches[i + 1];
 
       if (nextOp === '*' || nextOp === '/') {
         // Multiplication/Division Group
         const prevNum = token;
         const op = nextOp;
-        const nextNum = fullTokens[i + 2];
+        const nextNum = matches[i + 2];
+        const groupLen = prevNum.length + op.length + (nextNum ? nextNum.length : 0);
+        const groupEndIdx = tokenStartIdx + groupLen;
 
         let stepResult = null;
         if (nextNum !== undefined && !isNaN(parseFloat(prevNum)) && !isNaN(parseFloat(nextNum))) {
@@ -132,8 +180,13 @@ export default function MobileCalculator () {
           stepResult = Math.round(res * 1e4) / 1e4;
         }
 
+        elements.push(renderCursorIfNeeded(tokenStartIdx));
         elements.push(
-          <div key={`group-${i}`} style={styles.sleekBadge}>
+          <div
+            key={`group-${i}`}
+            style={styles.sleekBadge}
+            onClick={() => setCursorPos(groupEndIdx)}
+          >
             <span style={styles.topExpression}>
               ({prevNum} {op === '*' ? '×' : '÷'} {nextNum !== undefined ? nextNum : ''})
             </span>
@@ -142,16 +195,21 @@ export default function MobileCalculator () {
             </span>
           </div>
         );
+
+        charCounter += nextOp.length + (nextNum ? nextNum.length : 0);
         i += 3;
-      } else if (prevOp === '*' || prevOp === '/') {
-        i++;
       } else {
-        // Addition/Subtraction term formatted as (N × 1)
+        // Standalone term formatted as (N × 1)
         const val = parseFloat(token);
         const isValid = !isNaN(val);
 
+        elements.push(renderCursorIfNeeded(tokenStartIdx));
         elements.push(
-          <div key={`term-${i}`} style={styles.sleekBadge}>
+          <div
+            key={`term-${i}`}
+            style={styles.sleekBadge}
+            onClick={() => setCursorPos(tokenEndIdx)}
+          >
             <span style={styles.topExpression}>
               ({token} × 1)
             </span>
@@ -164,93 +222,136 @@ export default function MobileCalculator () {
       }
     }
 
+    // Cursor at the very end of expression
+    if (cursorPos === rawExpr.length) {
+      elements.push(<span key="cursor-end" style={styles.cursor}>|</span>);
+    }
+
     return elements;
   };
 
   return (
-    <div style={styles.mobileFrame}>
-      {/* Vertical Auto-Scrolling Expression Display (Shows 2 Rows) */}
-      <div style={styles.expressionDisplay}>
-        <div style={styles.scrollContainer}>
-          {renderTokenDisplay()}
-          <div ref={displayEndRef} />
+    <div style={styles.outerContainer}>
+      <div style={styles.mobileFrame}>
+        {/* Scrollable Expression Display with Active Cursor */}
+        <div style={styles.expressionDisplay}>
+          <div style={styles.scrollContainer}>
+            {renderTokenDisplay()}
+            <div ref={displayEndRef} />
+          </div>
         </div>
-      </div>
 
-      {/* Running Total Display */}
-      <div style={styles.totalDisplay}>
-        <span style={styles.totalLabel}>Total</span>
-        <span style={styles.totalValue}>{currentTotal}</span>
-      </div>
+        {/* Cursor Navigation Bar */}
+        <div style={styles.cursorControls}>
+          <button
+            style={styles.navBtn}
+            onClick={() => setCursorPos((p) => Math.max(0, p - 1))}
+          >
+            ‹ Left
+          </button>
+          <span style={styles.cursorLabel}>Cursor Position: {cursorPos}</span>
+          <button
+            style={styles.navBtn}
+            onClick={() => setCursorPos((p) => Math.min(rawExpr.length, p + 1))}
+          >
+            Right ›
+          </button>
+        </div>
 
-      {/* Keypad Grid with Round White-Text Buttons */}
-      <div style={styles.keypad}>
-        <button style={{ ...styles.btn, ...styles.clearBtn, gridColumn: 'span 3', borderRadius: '30px' }} onClick={handleClear}>C</button>
-        <button style={{ ...styles.btn, ...styles.backBtn }} onClick={handleBackspace}>⌫</button>
+        {/* Running Total Display */}
+        <div style={styles.totalDisplay}>
+          <span style={styles.totalLabel}>Total</span>
+          <span style={styles.totalValue}>{currentTotal}</span>
+        </div>
 
-        <button style={styles.btn} onClick={() => handleNumber('7')}>7</button>
-        <button style={styles.btn} onClick={() => handleNumber('8')}>8</button>
-        <button style={styles.btn} onClick={() => handleNumber('9')}>9</button>
-        <button style={styles.btnOp} onClick={() => handleOperator('/')}>÷</button>
+        {/* Keypad Layout */}
+        <div style={styles.keypad}>
+          <button style={{ ...styles.btn, ...styles.clearBtn, gridColumn: 'span 3', borderRadius: '34px' }} onClick={handleClear}>C</button>
+          <button style={{ ...styles.btn, ...styles.backBtn }} onClick={handleBackspace}>⌫</button>
 
-        <button style={styles.btn} onClick={() => handleNumber('4')}>4</button>
-        <button style={styles.btn} onClick={() => handleNumber('5')}>5</button>
-        <button style={styles.btn} onClick={() => handleNumber('6')}>6</button>
-        <button style={styles.btnOp} onClick={() => handleOperator('*')}>×</button>
+          <button style={styles.btn} onClick={() => handleNumber('7')}>7</button>
+          <button style={styles.btn} onClick={() => handleNumber('8')}>8</button>
+          <button style={styles.btn} onClick={() => handleNumber('9')}>9</button>
+          <button style={styles.btnOp} onClick={() => handleOperator('/')}>÷</button>
 
-        <button style={styles.btn} onClick={() => handleNumber('1')}>1</button>
-        <button style={styles.btn} onClick={() => handleNumber('2')}>2</button>
-        <button style={styles.btn} onClick={() => handleNumber('3')}>3</button>
-        <button style={styles.btnOp} onClick={() => handleOperator('-')}>-</button>
+          <button style={styles.btn} onClick={() => handleNumber('4')}>4</button>
+          <button style={styles.btn} onClick={() => handleNumber('5')}>5</button>
+          <button style={styles.btn} onClick={() => handleNumber('6')}>6</button>
+          <button style={styles.btnOp} onClick={() => handleOperator('*')}>×</button>
 
-        <button style={styles.btn} onClick={() => handleNumber('0')}>0</button>
-        <button style={styles.btn} onClick={() => handleNumber('.')}>.</button>
-        <button style={{ ...styles.btn, ...styles.equalsBtn }} onClick={handleEquals}>=</button>
-        <button style={styles.btnOp} onClick={() => handleOperator('+')}>+</button>
+          <button style={styles.btn} onClick={() => handleNumber('1')}>1</button>
+          <button style={styles.btn} onClick={() => handleNumber('2')}>2</button>
+          <button style={styles.btn} onClick={() => handleNumber('3')}>3</button>
+          <button style={styles.btnOp} onClick={() => handleOperator('-')}>-</button>
+
+          <button style={styles.btn} onClick={() => handleNumber('0')}>0</button>
+          <button style={styles.btn} onClick={() => handleNumber('.')}>.</button>
+          <button style={{ ...styles.btn, ...styles.equalsBtn }} onClick={handleEquals}>=</button>
+          <button style={styles.btnOp} onClick={() => handleOperator('+')}>+</button>
+        </div>
       </div>
     </div>
   );
 }
 
 const styles = {
+  outerContainer: {
+    minHeight: '100vh',
+    backgroundColor: '#090A0F',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: '20px 10px',
+  },
   mobileFrame: {
     width: '100%',
-    maxWidth: '360px',
-    margin: '20px auto',
-    backgroundColor: '#1E1E2E',
-    borderRadius: '32px',
+    maxWidth: '380px',
+    minHeight: '660px',
+    backgroundColor: '#12131C',
+    borderRadius: '36px',
     padding: '24px 20px',
-    boxShadow: '0 12px 35px rgba(0,0,0,0.45)',
+    boxShadow: '0 20px 50px rgba(0,0,0,0.85)',
     fontFamily: 'system-ui, -apple-system, sans-serif',
     color: '#FFFFFF',
     display: 'flex',
     flexDirection: 'column',
+    justifyContent: 'space-between',
     gap: '15px',
     boxSizing: 'border-box',
+    border: '1px solid #1E202E',
   },
   expressionDisplay: {
-    height: '85px', // Fixed height to fit ~2 vertical rows nicely
-    backgroundColor: '#181825',
-    borderRadius: '16px',
-    padding: '10px 14px',
+    height: '110px',
+    backgroundColor: '#0B0C14',
+    borderRadius: '18px',
+    padding: '12px 14px',
     overflowY: 'auto',
     scrollbarWidth: 'none',
+    border: '1px solid #1A1B29',
   },
   scrollContainer: {
     display: 'flex',
     flexWrap: 'wrap',
     alignItems: 'center',
-    gap: '8px',
+    gap: '6px',
+  },
+  cursor: {
+    color: '#A6E3A1',
+    fontWeight: 'bold',
+    fontSize: '20px',
+    animation: 'blink 1s infinite',
+    margin: '0 2px',
   },
   sleekBadge: {
     display: 'inline-flex',
     flexDirection: 'column',
     alignItems: 'center',
-    backgroundColor: '#2A2B3D',
+    backgroundColor: '#1E2030',
     border: '1px solid #FAB387',
     borderRadius: '8px',
-    padding: '3px 9px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+    padding: '4px 10px',
+    cursor: 'pointer',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.4)',
   },
   topExpression: {
     fontSize: '11px',
@@ -269,6 +370,29 @@ const styles = {
     fontWeight: 'bold',
     color: '#F9E2AF',
     padding: '0 4px',
+    cursor: 'pointer',
+  },
+  cursorControls: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#181926',
+    borderRadius: '12px',
+    padding: '4px 10px',
+  },
+  navBtn: {
+    backgroundColor: '#313244',
+    color: '#CDD6F4',
+    border: 'none',
+    borderRadius: '8px',
+    padding: '4px 12px',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+  },
+  cursorLabel: {
+    fontSize: '11px',
+    color: '#A6ADC8',
   },
   totalDisplay: {
     textAlign: 'right',
@@ -276,30 +400,30 @@ const styles = {
   },
   totalLabel: {
     fontSize: '11px',
-    color: '#A6ADC8',
+    color: '#89B4FA',
     display: 'block',
-    letterSpacing: '0.5px',
+    letterSpacing: '0.8px',
     textTransform: 'uppercase',
   },
   totalValue: {
-    fontSize: '36px',
+    fontSize: '40px',
     fontWeight: 'bold',
     color: '#A6E3A1',
   },
   keypad: {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '12px',
+    gap: '14px',
     justifyItems: 'center',
   },
   btn: {
-    width: '62px',
-    height: '62px',
+    width: '68px',
+    height: '68px',
     borderRadius: '50%',
     border: 'none',
-    backgroundColor: '#313244',
-    color: '#FFFFFF', // Crisp White Text
-    fontSize: '24px', // Increased size
+    backgroundColor: '#232536',
+    color: '#FFFFFF',
+    fontSize: '26px',
     fontWeight: '600',
     cursor: 'pointer',
     display: 'flex',
@@ -307,13 +431,13 @@ const styles = {
     justifyContent: 'center',
   },
   btnOp: {
-    width: '62px',
-    height: '62px',
+    width: '68px',
+    height: '68px',
     borderRadius: '50%',
     border: 'none',
-    backgroundColor: '#89B4FA',
-    color: '#FFFFFF', // Crisp White Text
-    fontSize: '26px', // Increased size
+    backgroundColor: '#3B4261',
+    color: '#FFFFFF',
+    fontSize: '28px',
     fontWeight: 'bold',
     cursor: 'pointer',
     display: 'flex',
@@ -322,18 +446,18 @@ const styles = {
   },
   clearBtn: {
     width: '100%',
-    backgroundColor: '#F38BA8',
+    backgroundColor: '#E78284',
     color: '#FFFFFF',
-    fontSize: '22px',
+    fontSize: '24px',
   },
   backBtn: {
-    backgroundColor: '#FAB387',
+    backgroundColor: '#E5C890',
     color: '#FFFFFF',
-    fontSize: '22px',
+    fontSize: '24px',
   },
   equalsBtn: {
     backgroundColor: '#A6E3A1',
-    color: '#FFFFFF',
-    fontSize: '26px',
+    color: '#11111B',
+    fontSize: '28px',
   },
 };
