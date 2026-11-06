@@ -283,11 +283,13 @@ export default function MobileCalculator () {
 const styles = {
   outerContainer: {
     minHeight: '100vh',
+    maxHeight: '100vh',
+    overflow: 'hidden', // Locks the outer page so it never scrolls
     backgroundColor: '#090A0F',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    padding: '20px 10px',
+    padding: '10px',
   },
   mobileFrame: {
     width: '100%',
