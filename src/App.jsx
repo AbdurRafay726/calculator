@@ -3,30 +3,26 @@ import React, { useState, useEffect, useRef } from 'react';
 export default function MobileCalculator () {
   const [tokens, setTokens] = useState([]);
   const [currentInput, setCurrentInput] = useState('');
-  const [cursorPos, setCursorPos] = useState(0); // Position index in raw string expression
+  const [cursorPos, setCursorPos] = useState(0);
   const displayEndRef = useRef(null);
 
-  // Combine tokens into a raw string expression to manage cursor position seamlessly
   const getRawExpression = () => {
     return [...tokens, currentInput].join('');
   };
 
   const rawExpr = getRawExpression();
 
-  // Auto-scroll as the expression changes
   useEffect(() => {
     displayEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [rawExpr, cursorPos]);
 
-  // Evaluate standard PEMDAS calculation from raw string
   const calculateTotal = (expr) => {
     if (!expr) return 0;
 
-    // Parse tokens (numbers vs operators)
-    const matches = expr.match(/(\d+\.?\d*|[\+\-\*\/])/g);
+    // Fixed regex: Removed unnecessary escapes inside character classes
+    const matches = expr.match(/(\d+\.?\d*|[+\-*/])/g);
     if (!matches) return 0;
 
-    // Step 1: Multiplication & Division
     const intermediate = [];
     let i = 0;
     while (i < matches.length) {
@@ -48,7 +44,6 @@ export default function MobileCalculator () {
       i++;
     }
 
-    // Step 2: Addition & Subtraction
     let result = parseFloat(intermediate[0]) || 0;
     for (let j = 1; j < intermediate.length; j += 2) {
       const op = intermediate[j];
@@ -63,16 +58,15 @@ export default function MobileCalculator () {
 
   const currentTotal = calculateTotal(rawExpr);
 
-  // Insert value at the active cursor position
   const insertAtCursor = (char) => {
     const newExpr = rawExpr.slice(0, cursorPos) + char + rawExpr.slice(cursorPos);
     parseRawToTokens(newExpr);
     setCursorPos((prev) => prev + char.length);
   };
 
-  // Convert raw string back into state tokens
   const parseRawToTokens = (str) => {
-    const parts = str.match(/(\d+\.?\d*|[\+\-\*\/])/g) || [];
+    // Fixed regex here as well
+    const parts = str.match(/(\d+\.?\d*|[+\-*/])/g) || [];
     if (parts.length === 0) {
       setTokens([]);
       setCurrentInput('');
@@ -90,6 +84,7 @@ export default function MobileCalculator () {
   };
 
   const handleNumber = (val) => {
+    if (val === '.' && currentInput.includes('.')) return;
     insertAtCursor(val);
   };
 
@@ -97,7 +92,6 @@ export default function MobileCalculator () {
     if (!rawExpr && op !== '-') return;
     const lastChar = rawExpr[cursorPos - 1];
     if (['+', '-', '*', '/'].includes(lastChar)) {
-      // Replace existing operator behind cursor
       const newExpr = rawExpr.slice(0, cursorPos - 1) + op + rawExpr.slice(cursorPos);
       parseRawToTokens(newExpr);
     } else {
@@ -126,9 +120,9 @@ export default function MobileCalculator () {
     setCursorPos(0);
   };
 
-  // Render tokens into vertical rows with interactive cursor placement
   const renderTokenDisplay = () => {
-    const matches = rawExpr.match(/(\d+\.?\d*|[\+\-\*\/])/g) || [];
+    // Fixed regex here as well
+    const matches = rawExpr.match(/(\d+\.?\d*|[+\-*/])/g) || [];
     const elements = [];
     let charCounter = 0;
 
@@ -141,7 +135,6 @@ export default function MobileCalculator () {
 
       const isOp = ['+', '-', '*', '/'].includes(token);
 
-      // Render blinking/active cursor bar
       const renderCursorIfNeeded = (pos) => {
         if (cursorPos === pos) {
           return <span key={`cursor-${pos}`} style={styles.cursor}>|</span>;
@@ -167,7 +160,6 @@ export default function MobileCalculator () {
       const nextOp = matches[i + 1];
 
       if (nextOp === '*' || nextOp === '/') {
-        // Multiplication/Division Group
         const prevNum = token;
         const op = nextOp;
         const nextNum = matches[i + 2];
@@ -199,7 +191,6 @@ export default function MobileCalculator () {
         charCounter += nextOp.length + (nextNum ? nextNum.length : 0);
         i += 3;
       } else {
-        // Standalone term formatted as (N × 1)
         const val = parseFloat(token);
         const isValid = !isNaN(val);
 
@@ -222,7 +213,6 @@ export default function MobileCalculator () {
       }
     }
 
-    // Cursor at the very end of expression
     if (cursorPos === rawExpr.length) {
       elements.push(<span key="cursor-end" style={styles.cursor}>|</span>);
     }
@@ -233,7 +223,6 @@ export default function MobileCalculator () {
   return (
     <div style={styles.outerContainer}>
       <div style={styles.mobileFrame}>
-        {/* Scrollable Expression Display with Active Cursor */}
         <div style={styles.expressionDisplay}>
           <div style={styles.scrollContainer}>
             {renderTokenDisplay()}
@@ -241,7 +230,6 @@ export default function MobileCalculator () {
           </div>
         </div>
 
-        {/* Cursor Navigation Bar */}
         <div style={styles.cursorControls}>
           <button
             style={styles.navBtn}
@@ -258,13 +246,11 @@ export default function MobileCalculator () {
           </button>
         </div>
 
-        {/* Running Total Display */}
         <div style={styles.totalDisplay}>
           <span style={styles.totalLabel}>Total</span>
           <span style={styles.totalValue}>{currentTotal}</span>
         </div>
 
-        {/* Keypad Layout */}
         <div style={styles.keypad}>
           <button style={{ ...styles.btn, ...styles.clearBtn, gridColumn: 'span 3', borderRadius: '34px' }} onClick={handleClear}>C</button>
           <button style={{ ...styles.btn, ...styles.backBtn }} onClick={handleBackspace}>⌫</button>
