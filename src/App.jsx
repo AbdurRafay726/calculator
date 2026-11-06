@@ -282,14 +282,16 @@ export default function MobileCalculator () {
 
 const styles = {
   outerContainer: {
-    minHeight: '100vh',
-    maxHeight: '100vh',
-    overflow: 'hidden', // Locks the outer page so it never scrolls
+    width: '100vw',
+    height: '100dvh', // Uses dynamic viewport height to fit mobile screen exactly
+    overflow: 'hidden', // Stops outer page scrolling completely
+    touchAction: 'none', // Prevents touch-dragging the background
     backgroundColor: '#090A0F',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
     padding: '10px',
+    boxSizing: 'border-box',
   },
   mobileFrame: {
     width: '100%',
@@ -417,6 +419,9 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    WebkitTapHighlightColor: 'transparent', // Removes grey highlight box on touch
+    userSelect: 'none', // Prevents text selection on rapid tapping
+    touchAction: 'manipulation', // Eliminates 300ms mobile click delay & zoom gestures
   },
   btnOp: {
     width: '68px',
@@ -431,6 +436,9 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
+    WebkitTapHighlightColor: 'transparent',
+    userSelect: 'none',
+    touchAction: 'manipulation',
   },
   clearBtn: {
     width: '100%',
